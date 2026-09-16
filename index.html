@@ -57,6 +57,30 @@
     background:radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0,0,0,0.38) 100%);
     pointer-events:none;
   }
+
+  /* Optional photo layer + tint, selectable from Appearance → Background.
+     Sits above the gradient and below the grain/glow, same z-index as
+     .backdrop but later in the DOM so it paints on top of it. Nothing
+     breaks if bg1.jpg/bg2.jpg/bg3.jpg aren't present yet — the swatch
+     just shows the plain tinted scrim instead of a photo. */
+  .bgphoto{
+    position:fixed; inset:0; z-index:0;
+    background-size:cover; background-position:center;
+    opacity:0;
+    transition:opacity .5s ease;
+  }
+  .bgphoto.active{opacity:1;}
+  .bgscrim{
+    position:fixed; inset:0; z-index:0;
+    opacity:0;
+    transition:opacity .5s ease;
+    pointer-events:none;
+    background:
+      linear-gradient(rgba(62,2,9,0.58), rgba(62,2,9,0.58)),
+      radial-gradient(120% 100% at 50% 50%, transparent 45%, rgba(0,0,0,0.5) 100%);
+  }
+  .bgscrim.active{opacity:1;}
+
   .grain{
     position:fixed; inset:0; z-index:1; pointer-events:none;
     opacity:0.05; mix-blend-mode:overlay;
@@ -181,6 +205,32 @@
   .field{margin-bottom:22px; max-width:420px;}
   .field label{display:block; font-size:12.5px; color:var(--ink-dim); margin-bottom:8px;}
   .field input[type="range"]{width:100%;}
+
+  /* background swatches (Appearance → Background) */
+  .bgswatchrow{display:flex; gap:14px; margin:6px 0 10px; flex-wrap:wrap;}
+  .bgswatch{
+    width:78px; height:50px; border-radius:10px;
+    border:2px solid rgba(255,255,255,0.22);
+    background-size:cover; background-position:center;
+    background-color:rgba(255,255,255,0.06);
+    cursor:pointer; position:relative;
+    transition:transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .bgswatch .bgswatchlabel{
+    position:absolute; left:6px; bottom:5px;
+    font-size:11px; font-weight:500; color:var(--ink);
+    text-shadow:0 1px 3px rgba(0,0,0,0.7);
+  }
+  .bgswatch.active{border-color:#fff; transform:scale(1.04); box-shadow:0 0 12px 2px var(--copper);}
+  .bgswatch:hover{border-color:rgba(255,255,255,0.5);}
+  .bgnone{
+    display:inline-block; margin-top:2px;
+    font:inherit; font-size:12.5px; color:var(--ink-dim);
+    background:none; border:none; padding:0; cursor:pointer;
+    text-decoration:underline; text-decoration-color:var(--copper-dim);
+  }
+  .bgnone:hover{color:var(--ink);}
+
   .togglerow{display:flex; align-items:center; justify-content:space-between; max-width:420px; padding:12px 0; border-top:1px solid rgba(255,255,255,0.12);}
   .togglerow span{font-size:14px;}
   .switch{
@@ -244,6 +294,8 @@
       <path d="M -50 640 C 340 605, 620 585, 940 610 S 1460 670 1700 640" fill="none" stroke="#FFEDE6" stroke-opacity="0.08" stroke-width="22" filter="url(#soft)"/>
     </svg>
   </div>
+  <div class="bgphoto" id="bgPhoto"></div>
+  <div class="bgscrim" id="bgScrim"></div>
   <div class="grain"></div>
 
   <div class="stage">
@@ -274,10 +326,10 @@
 
      A web page can't touch a bootloader or switch OS sessions by
      itself on ANY platform — browsers sandbox JS away from anything
-     that privileged, ChromeOS included. The original version of
-     this page assumed a small local helper service on the machine
-     (started by systemd, listening on localhost) doing the real,
-     privileged work: writing a boot-loader entry and calling
+     that privileged, ChromeOS included. This page assumes a small
+     local helper service on the machine (started by systemd,
+     listening on localhost) doing the real, privileged work: writing
+     a boot-loader entry and calling
      `systemctl reboot --boot-loader-entry=...`, or handing off to a
      session-switch command like `steamos-session-select gamescope`.
      None of that exists on ChromeOS:
@@ -295,14 +347,11 @@
          the whole Chromebook or take over the ChromeOS session the
          way gamescope takes over a Steam Deck's display.
 
-     So: this fetch() call is left wired up exactly as before, because
-     it'll still reach a helper you run inside Crostini on this same
-     port with no changes. What it should actually trigger once it
-     gets there is up to you — swap the body of attemptBoot()/whatever
-     BOOT_ENDPOINT points at for whatever is real on this device
-     (open a URL, launch an installed app, run a Crostini-side
-     script, etc). Until something answers, clicking an entry will
-     just show the "offline" state below, same as it did before.
+     So: this fetch() call is wired up to talk to a real helper —
+     see boot_helper.py alongside this file (and its README) for a
+     working implementation that runs `steamos-session-select
+     gamescope` for the sample entry below. Swap the command in that
+     helper's config for whatever is real on your device.
      ============================================================ */
   const BOOT_ENDPOINT = "http://localhost:8420/boot";
 
@@ -316,12 +365,23 @@
 
   /* ---------------- data ----------------
      Sample entry — edit freely. Read the BOOT BACKEND CONTRACT note
-     above before wiring this to anything real on ChromeOS. */
+     above (and boot_helper.py's README) before wiring this to
+     anything real on ChromeOS. */
   const bootEntries = [
     { id:"bazzite-gamemode", title:"Bazzite (Game Mode)", sub:"SteamOS-style · gamescope session", meta:"default", icon:icon.disc }
   ];
 
   const accents = ["#D48A44", "#4AA3C7", "#7FB56E", "#C74AA0", "#C7B24A"];
+
+  /* Background photo slots — drop three image files with these exact
+     names next to this index.html (any raster format works, just
+     rename it, or edit `file` below to match). Nothing breaks if a
+     file isn't there: that swatch just won't show a photo yet. */
+  const bgImages = [
+    { file:"bg1.jpg", label:"1" },
+    { file:"bg2.jpg", label:"2" },
+    { file:"bg3.jpg", label:"3" }
+  ];
 
   const state = {
     section: 0,
@@ -329,9 +389,35 @@
     accentIndex: 0,
     glowOn: true,
     grainOn: true,
+    bgIndex: null,       // null = gradient only, else index into bgImages
     booting: false,
     bootStatus: {}
   };
+
+  /* ---------------- settings persistence ----------------
+     This dashboard tends to load fresh on every boot, so remembering
+     the chosen accent/background/toggles across reloads is worth the
+     few lines it costs. Wrapped in try/catch since storage can be
+     unavailable (e.g. opened with storage disabled) — the dashboard
+     still works fine, it just won't remember your choices. */
+  const STORAGE_KEY = "rustos-copperdb-settings";
+
+  function loadSettings(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(err){ return null; }
+  }
+  function saveSettings(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        accentIndex: state.accentIndex,
+        glowOn: state.glowOn,
+        grainOn: state.grainOn,
+        bgIndex: state.bgIndex
+      }));
+    } catch(err){ /* no persistence available — safe to ignore */ }
+  }
 
   const sections = [
     { id:"boot", label:"Boot", icon:icon.boot },
@@ -389,6 +475,11 @@
         <label>Accent color</label>
         <div class="swatchrow" id="swatchRow"></div>
       </div>
+      <div class="field">
+        <label>Background</label>
+        <div class="bgswatchrow" id="bgSwatchRow"></div>
+        <button class="bgnone" id="bgNoneBtn" type="button">Use gradient only</button>
+      </div>
       <div class="togglerow">
         <span>Glow strands</span>
         <div class="switch ${state.glowOn ? "on" : ""}" id="glowSwitch"></div>
@@ -398,6 +489,7 @@
         <div class="switch ${state.grainOn ? "on" : ""}" id="grainSwitch"></div>
       </div>
     `;
+
     const row = document.getElementById("swatchRow");
     accents.forEach((c, i) => {
       const sw = document.createElement("div");
@@ -406,18 +498,43 @@
       sw.addEventListener("click", () => {
         state.accentIndex = i;
         applyAccent();
+        saveSettings();
         render();
       });
       row.appendChild(sw);
     });
+
+    const bgRow = document.getElementById("bgSwatchRow");
+    bgImages.forEach((b, i) => {
+      const sw = document.createElement("div");
+      sw.className = "bgswatch" + (i === state.bgIndex ? " active" : "");
+      sw.style.backgroundImage = `url("${b.file}")`;
+      sw.innerHTML = `<span class="bgswatchlabel">${b.label}</span>`;
+      sw.addEventListener("click", () => {
+        state.bgIndex = i;
+        applyBackground();
+        saveSettings();
+        render();
+      });
+      bgRow.appendChild(sw);
+    });
+    document.getElementById("bgNoneBtn").addEventListener("click", () => {
+      state.bgIndex = null;
+      applyBackground();
+      saveSettings();
+      render();
+    });
+
     document.getElementById("glowSwitch").addEventListener("click", () => {
       state.glowOn = !state.glowOn;
       applyToggles();
+      saveSettings();
       render();
     });
     document.getElementById("grainSwitch").addEventListener("click", () => {
       state.grainOn = !state.grainOn;
       applyToggles();
+      saveSettings();
       render();
     });
   }
@@ -426,7 +543,8 @@
     content.innerHTML = `
       <h2 class="paneltitle">Info</h2>
       <div class="infobox">
-        <p>RustOS's Copper DB is a themed boot dashboard, built after the PS3 / PS Vita XMB interface. Selecting an entry sends a boot request to a local helper service running on this machine — see the comment at the top of the script for the contract it expects, and the ChromeOS notes there if you're running this on a Chromebook.</p>
+        <p>RustOS's Copper DB is a themed boot dashboard, built after the PS3 / PS Vita XMB interface. Selecting an entry sends a boot request to a local helper service running on this machine — see boot_helper.py and its README alongside this file for the contract it expects, and the ChromeOS notes there if you're running this on a Chromebook.</p>
+        <p>The Appearance tab can swap in up to three of your own photos as the backdrop — save them as bg1.jpg, bg2.jpg and bg3.jpg next to this file, or edit the file names near the top of the script.</p>
         <p>Source lives on <a href="https://github.com/" target="_blank" rel="noopener">GitHub</a> — replace this link with your own repo once it's pushed.</p>
         <div class="kicker">Navigate with arrow keys, or click around.</div>
       </div>
@@ -481,6 +599,20 @@
     document.querySelector(".backdrop svg").style.display = state.glowOn ? "block" : "none";
     document.querySelector(".grain").style.display = state.grainOn ? "block" : "none";
   }
+  function applyBackground(){
+    const photo = document.getElementById("bgPhoto");
+    const scrim = document.getElementById("bgScrim");
+    const chosen = state.bgIndex !== null ? bgImages[state.bgIndex] : null;
+    if(!chosen){
+      photo.classList.remove("active");
+      scrim.classList.remove("active");
+      photo.style.backgroundImage = "";
+    } else {
+      photo.style.backgroundImage = `url("${chosen.file}")`;
+      photo.classList.add("active");
+      scrim.classList.add("active");
+    }
+  }
 
   /* ---------------- keyboard nav ---------------- */
   window.addEventListener("keydown", (e) => {
@@ -529,6 +661,18 @@
   }
 
   /* ---------------- init ---------------- */
+  (function initSettings(){
+    const saved = loadSettings();
+    if(saved){
+      if(typeof saved.accentIndex === "number" && accents[saved.accentIndex] !== undefined) state.accentIndex = saved.accentIndex;
+      if(typeof saved.glowOn === "boolean") state.glowOn = saved.glowOn;
+      if(typeof saved.grainOn === "boolean") state.grainOn = saved.grainOn;
+      if(typeof saved.bgIndex === "number" && bgImages[saved.bgIndex] !== undefined) state.bgIndex = saved.bgIndex;
+    }
+  })();
+  applyAccent();
+  applyToggles();
+  applyBackground();
   render();
 })();
 </script>
