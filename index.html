@@ -168,10 +168,22 @@
     opacity:0.8;
   }
   .row .rowicon svg{width:100%; height:100%;}
-  .row .rowtext .rowtitle{font-size:16px; font-weight:500; color:var(--ink);}
-  .row .rowtext .rowsub{font-size:12.5px; color:var(--ink-faint); margin-top:2px;}
+  .row .rowtext{
+    display:flex; flex-direction:column; gap:2px;
+    flex:1; min-width:0;
+  }
+  .row .rowtop{
+    display:flex; align-items:baseline; gap:14px;
+    min-width:0;
+  }
+  .row .rowtitle{
+    font-size:16px; font-weight:500; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .row .rowsub{font-size:12.5px; color:var(--ink-faint);}
   .row .rowmeta{
-    margin-left:auto; font-size:12px; color:var(--ink-faint);
+    margin-left:auto; flex:none; white-space:nowrap;
+    font-size:12px; color:var(--ink-faint);
     opacity:0; transition:opacity .18s ease;
   }
   .row.selected{background:rgba(255,238,236,0.10);}
@@ -322,38 +334,28 @@
 (function(){
 
   /* ============================================================
-     BOOT BACKEND CONTRACT — ChromeOS notes
+     BOOT MECHANISM — custom URI scheme, no server
 
      A web page can't touch a bootloader or switch OS sessions by
      itself on ANY platform — browsers sandbox JS away from anything
-     that privileged, ChromeOS included. This page assumes a small
-     local helper service on the machine (started by systemd,
-     listening on localhost) doing the real, privileged work: writing
-     a boot-loader entry and calling
-     `systemctl reboot --boot-loader-entry=...`, or handing off to a
-     session-switch command like `steamos-session-select gamescope`.
-     None of that exists on ChromeOS:
+     that privileged. There's no way around that from pure client-side
+     code, so this page doesn't try to run anything itself: it just
+     navigates to a custom URI (rustos-boot:<entry-id>), the same way
+     steam://, slack://, or zoommtg:// links work. The OS is
+     responsible for having something registered to catch that scheme
+     and act on it — see rustos-boot.desktop + rustos-boot-handler
+     alongside this file for a minimal example that maps
+     "bazzite-gamemode" to `steamos-session-select gamescope`.
 
-       - Stock ChromeOS has no systemd-boot/GRUB entries exposed to
-         userspace, and no gamescope-style compositor/session
-         switcher a webpage could ask for.
-       - If Linux (Crostini) is turned on, ChromeOS *does* forward
-         most localhost ports opened inside the container out to the
-         Chrome browser automatically (this one included — 8420
-         isn't on the small blocked list), so a helper script running
-         inside Crostini can still receive this POST. But it's
-         sandboxed inside that Linux VM: it can relaunch a Linux app,
-         run a script, or hit another local service — it can't reboot
-         the whole Chromebook or take over the ChromeOS session the
-         way gamescope takes over a Steam Deck's display.
-
-     So: this fetch() call is wired up to talk to a real helper —
-     see boot_helper.py alongside this file (and its README) for a
-     working implementation that runs `steamos-session-select
-     gamescope` for the sample entry below. Swap the command in that
-     helper's config for whatever is real on your device.
+     Browsers deliberately don't tell a page whether a custom scheme
+     had a registered handler (that'd let any site fingerprint your
+     installed apps), so there's no clean success/failure signal here.
+     What this does instead: fire the navigation, then watch for the
+     tab losing focus/visibility within a short window — that usually
+     means an external app took over. If nothing happens in that
+     window, treat it as "no handler registered" and reset.
      ============================================================ */
-  const BOOT_ENDPOINT = "http://localhost:8420/boot";
+  const BOOT_SCHEME = "rustos-boot";
 
   /* ---------------- icons ---------------- */
   const icon = {
@@ -364,9 +366,9 @@
   };
 
   /* ---------------- data ----------------
-     Sample entry — edit freely. Read the BOOT BACKEND CONTRACT note
-     above (and boot_helper.py's README) before wiring this to
-     anything real on ChromeOS. */
+     Sample entry — edit freely. The `id` here must match a case in
+     rustos-boot-handler on the OS side. Read the BOOT MECHANISM note
+     above before wiring up more entries. */
   const bootEntries = [
     { id:"bazzite-gamemode", title:"Bazzite (Game Mode)", sub:"SteamOS-style · gamescope session", meta:"default", icon:icon.disc }
   ];
@@ -454,11 +456,13 @@
         + (i === sel ? " selected" : "")
         + (status === "booting" ? " booting" : "")
         + (status === "error" ? " error" : "");
-      const metaText = status === "booting" ? "booting…" : status === "error" ? "no boot service" : e.meta;
+      const metaText = status === "booting" ? "booting…" : status === "error" ? "no handler registered" : e.meta;
       li.innerHTML = `
         <span class="rowicon">${e.icon}</span>
-        <span class="rowtext"><span class="rowtitle">${e.title}</span><span class="rowsub">${e.sub}</span></span>
-        <span class="rowmeta">${metaText}</span>`;
+        <span class="rowtext">
+          <span class="rowtop"><span class="rowtitle">${e.title}</span><span class="rowmeta">${metaText}</span></span>
+          <span class="rowsub">${e.sub}</span>
+        </span>`;
       li.addEventListener("click", () => {
         state.rowIndex.boot = i;
         render();
@@ -543,7 +547,7 @@
     content.innerHTML = `
       <h2 class="paneltitle">Info</h2>
       <div class="infobox">
-        <p>RustOS's Copper DB is a themed boot dashboard, built after the PS3 / PS Vita XMB interface. Selecting an entry sends a boot request to a local helper service running on this machine — see boot_helper.py and its README alongside this file for the contract it expects, and the ChromeOS notes there if you're running this on a Chromebook.</p>
+        <p>RustOS's Copper DB is a themed boot dashboard, built after the PS3 / PS Vita XMB interface. Selecting an entry navigates to a rustos-boot: link — see rustos-boot.desktop and rustos-boot-handler alongside this file for the OS-side piece that registers and handles that scheme, and the README there for setup.</p>
         <p>The Appearance tab can swap in up to three of your own photos as the backdrop — save them as bg1.jpg, bg2.jpg and bg3.jpg next to this file, or edit the file names near the top of the script.</p>
         <p>Source lives on <a href="https://github.com/" target="_blank" rel="noopener">GitHub</a> — replace this link with your own repo once it's pushed.</p>
         <div class="kicker">Navigate with arrow keys, or click around.</div>
@@ -562,33 +566,47 @@
     renderContent();
   }
 
-  /* ---------------- boot ---------------- */
-  async function attemptBoot(entry){
+  /* ---------------- boot ----------------
+     Fires a rustos-boot:<id> navigation and waits ~1.5s to see if the
+     tab loses focus/visibility, which usually means the OS handed
+     off to a registered app for that scheme. There's no reliable
+     success callback for this (by design — see BOOT MECHANISM note),
+     so this is a heuristic, not a guarantee. */
+  const BOOT_HANDOFF_WINDOW_MS = 1500;
+
+  function attemptBoot(entry){
     if(state.booting) return;
     state.booting = true;
     state.bootStatus[entry.id] = "booting";
     renderContent();
-    try{
-      const res = await fetch(BOOT_ENDPOINT, {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ id: entry.id })
-      });
-      if(!res.ok) throw new Error("boot service responded " + res.status);
-      /* Success: the helper now owns whatever happens next. This page
-         just stays in the "booting…" state — there's nothing further
-         to render here. */
-    } catch(err){
+
+    let handedOff = false;
+    const markHandedOff = () => { handedOff = true; };
+    window.addEventListener("blur", markHandedOff, { once:true });
+    document.addEventListener("visibilitychange", markHandedOff, { once:true });
+
+    window.location.href = `${BOOT_SCHEME}:${entry.id}`;
+
+    setTimeout(() => {
+      window.removeEventListener("blur", markHandedOff);
+      document.removeEventListener("visibilitychange", markHandedOff);
+      state.booting = false;
+
+      if(handedOff){
+        /* Something took over — leave the row as-is rather than
+           flashing back to idle right as focus returns. */
+        state.bootStatus[entry.id] = null;
+        renderContent();
+        return;
+      }
+
       state.bootStatus[entry.id] = "error";
       renderContent();
       setTimeout(() => {
         state.bootStatus[entry.id] = null;
-        state.booting = false;
         renderContent();
       }, 2600);
-      return;
-    }
-    state.booting = false;
+    }, BOOT_HANDOFF_WINDOW_MS);
   }
 
   /* ---------------- appearance application ---------------- */
