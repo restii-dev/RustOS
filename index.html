@@ -340,12 +340,18 @@
      itself on ANY platform — browsers sandbox JS away from anything
      that privileged. There's no way around that from pure client-side
      code, so this page doesn't try to run anything itself: it just
-     navigates to a custom URI (rustos-boot:<entry-id>), the same way
-     steam://, slack://, or zoommtg:// links work. The OS is
-     responsible for having something registered to catch that scheme
-     and act on it — see rustos-boot.desktop + rustos-boot-handler
-     alongside this file for a minimal example that maps
-     "bazzite-gamemode" to `steamos-session-select gamescope`.
+     navigates to a URI and lets whatever owns that scheme handle it.
+
+     Two kinds of entries below:
+     - Entries with no `uri` field navigate to rustos-boot:<entry-id>.
+       The OS needs something registered to catch that scheme — see
+       rustos-boot.desktop + rustos-boot-handler alongside this file
+       for a minimal example that maps "bazzite-gamemode" to
+       `steamos-session-select gamescope`.
+     - Entries with an explicit `uri` (like the Steam one below) target
+       an app that already registers its own scheme on install — Steam
+       does this itself, the same way slack:// or zoommtg:// links
+       work, so no custom handler is needed for those.
 
      Browsers deliberately don't tell a page whether a custom scheme
      had a registered handler (that'd let any site fingerprint your
@@ -353,7 +359,7 @@
      What this does instead: fire the navigation, then watch for the
      tab losing focus/visibility within a short window — that usually
      means an external app took over. If nothing happens in that
-     window, treat it as "no handler registered" and reset.
+     window, treat it as "not handled" and reset.
      ============================================================ */
   const BOOT_SCHEME = "rustos-boot";
 
@@ -362,15 +368,22 @@
     boot: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v8" stroke="white" stroke-width="1.8" stroke-linecap="round"/><path d="M7 5.5a8 8 0 1 0 10 0" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg>`,
     appearance: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.4" stroke="white" stroke-width="1.8"/><circle cx="9" cy="9.3" r="1.15" fill="white"/><circle cx="14.6" cy="8.6" r="1.15" fill="white"/><circle cx="16.4" cy="13.6" r="1.15" fill="white"/><path d="M9.2 14.4c1.1 1.6 3.2 2.2 5 1.2" stroke="white" stroke-width="1.6" stroke-linecap="round"/></svg>`,
     info: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.4" stroke="white" stroke-width="1.8"/><circle cx="12" cy="8.4" r="1.1" fill="white"/><path d="M12 11.2v5.4" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg>`,
-    disc: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.6" stroke="white" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" stroke="white" stroke-width="1.7"/></svg>`
+    disc: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.6" stroke="white" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" stroke="white" stroke-width="1.7"/></svg>`,
+    launch: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3.5" y="3.5" width="17" height="17" rx="5" stroke="white" stroke-width="1.7"/><path d="M10 8.3l6 3.7-6 3.7z" fill="white"/></svg>`
   };
 
   /* ---------------- data ----------------
-     Sample entry — edit freely. The `id` here must match a case in
-     rustos-boot-handler on the OS side. Read the BOOT MECHANISM note
-     above before wiring up more entries. */
+     Sample entries — edit freely. bazzite-gamemode has no `uri`, so it
+     goes through rustos-boot: and needs the OS-side handler (see the
+     BOOT MECHANISM note above). The Steam entry sets `uri` directly to
+     Steam's own steam:// protocol — Steam registers that itself when
+     installed, so this one needs nothing extra alongside this file.
+     steam://open/main brings up Steam's regular window; swap in
+     steam://open/bigpicture instead if you'd rather this drop straight
+     into Big Picture Mode, which may suit a boot-menu context better. */
   const bootEntries = [
-    { id:"bazzite-gamemode", title:"Bazzite (Game Mode)", sub:"SteamOS-style · gamescope session", meta:"default", icon:icon.disc }
+    { id:"bazzite-gamemode", title:"Bazzite (Game Mode)", sub:"SteamOS-style · gamescope session", meta:"default", icon:icon.disc },
+    { id:"steam", title:"Steam", sub:"Launch the Steam client", meta:"app", icon:icon.launch, uri:"steam://open/main" }
   ];
 
   const accents = ["#D48A44", "#4AA3C7", "#7FB56E", "#C74AA0", "#C7B24A"];
@@ -456,7 +469,7 @@
         + (i === sel ? " selected" : "")
         + (status === "booting" ? " booting" : "")
         + (status === "error" ? " error" : "");
-      const metaText = status === "booting" ? "booting…" : status === "error" ? "no handler registered" : e.meta;
+      const metaText = status === "booting" ? "booting…" : status === "error" ? "not handled" : e.meta;
       li.innerHTML = `
         <span class="rowicon">${e.icon}</span>
         <span class="rowtext">
@@ -547,7 +560,7 @@
     content.innerHTML = `
       <h2 class="paneltitle">Info</h2>
       <div class="infobox">
-        <p>RustOS's Copper DB is a themed boot dashboard, built after the PS3 / PS Vita XMB interface. Selecting an entry navigates to a rustos-boot: link — see rustos-boot.desktop and rustos-boot-handler alongside this file for the OS-side piece that registers and handles that scheme, and the README there for setup.</p>
+        <p>RustOS's Copper DB is a themed boot dashboard, built after the PS3 / PS Vita XMB interface. Selecting an entry navigates to a URI — most go to a rustos-boot: link (see rustos-boot.desktop and rustos-boot-handler alongside this file for the OS-side piece that registers and handles that scheme), while entries for apps that register their own scheme, like Steam, link straight to that instead.</p>
         <p>The Appearance tab can swap in up to three of your own photos as the backdrop — save them as bg1.jpg, bg2.jpg and bg3.jpg next to this file, or edit the file names near the top of the script.</p>
         <p>Source lives on <a href="https://github.com/" target="_blank" rel="noopener">GitHub</a> — replace this link with your own repo once it's pushed.</p>
         <div class="kicker">Navigate with arrow keys, or click around.</div>
@@ -589,7 +602,7 @@
     window.addEventListener("blur", markHandedOff, { once:true });
     document.addEventListener("visibilitychange", markHandedOff, { once:true });
 
-    const uri = `${BOOT_SCHEME}:${entry.id}`;
+    const uri = entry.uri || `${BOOT_SCHEME}:${entry.id}`;
     console.log(`[copperdb] navigating to ${uri}`);
     window.location.href = uri;
 
@@ -607,7 +620,7 @@
         return;
       }
 
-      console.log(`[copperdb] no handoff within ${BOOT_HANDOFF_WINDOW_MS}ms — no handler registered for "${BOOT_SCHEME}:"`);
+      console.log(`[copperdb] no handoff within ${BOOT_HANDOFF_WINDOW_MS}ms — "${uri}" doesn't seem to be handled`);
       state.bootStatus[entry.id] = "error";
       renderContent();
       setTimeout(() => {
