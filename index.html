@@ -576,16 +576,22 @@
 
   function attemptBoot(entry){
     if(state.booting) return;
+    console.log(`[copperdb] attempting boot: ${entry.id}`);
     state.booting = true;
     state.bootStatus[entry.id] = "booting";
     renderContent();
 
     let handedOff = false;
-    const markHandedOff = () => { handedOff = true; };
+    const markHandedOff = () => {
+      handedOff = true;
+      console.log("[copperdb] tab lost focus/visibility — assuming a handler took over");
+    };
     window.addEventListener("blur", markHandedOff, { once:true });
     document.addEventListener("visibilitychange", markHandedOff, { once:true });
 
-    window.location.href = `${BOOT_SCHEME}:${entry.id}`;
+    const uri = `${BOOT_SCHEME}:${entry.id}`;
+    console.log(`[copperdb] navigating to ${uri}`);
+    window.location.href = uri;
 
     setTimeout(() => {
       window.removeEventListener("blur", markHandedOff);
@@ -593,6 +599,7 @@
       state.booting = false;
 
       if(handedOff){
+        console.log("[copperdb] handoff detected — treating as success");
         /* Something took over — leave the row as-is rather than
            flashing back to idle right as focus returns. */
         state.bootStatus[entry.id] = null;
@@ -600,6 +607,7 @@
         return;
       }
 
+      console.log(`[copperdb] no handoff within ${BOOT_HANDOFF_WINDOW_MS}ms — no handler registered for "${BOOT_SCHEME}:"`);
       state.bootStatus[entry.id] = "error";
       renderContent();
       setTimeout(() => {
